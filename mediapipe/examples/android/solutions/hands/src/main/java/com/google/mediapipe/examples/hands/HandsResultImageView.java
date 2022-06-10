@@ -105,11 +105,14 @@ public class HandsResultImageView extends AppCompatImageView {
           connectionPaint);
     }
     Paint landmarkPaint = new Paint();
-    landmarkPaint.setColor(isLeftHand ? LEFT_HAND_LANDMARK_COLOR : RIGHT_HAND_LANDMARK_COLOR);
     // Draws landmarks.
     for (LandmarkProto.NormalizedLandmark landmark : handLandmarkList) {
-      canvas.drawCircle(
-          landmark.getX() * width, landmark.getY() * height, LANDMARK_RADIUS, landmarkPaint);
+      if (landmark.equals(handLandmarkList.get(8))) { // Highlight index finger
+        landmarkPaint.setColor(Color.parseColor("#C33294"));
+      } else {
+        landmarkPaint.setColor(isLeftHand ? LEFT_HAND_LANDMARK_COLOR : RIGHT_HAND_LANDMARK_COLOR);
+      }
+      canvas.drawCircle(landmark.getX() * width, landmark.getY() * height, LANDMARK_RADIUS, landmarkPaint);
     }
     // Draws hollow circles around landmarks.
     landmarkPaint.setColor(

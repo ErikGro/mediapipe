@@ -32,6 +32,7 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
   private static final float[] RIGHT_HAND_CONNECTION_COLOR = new float[] {1f, 0.2f, 0.2f, 1f};
   private static final float CONNECTION_THICKNESS = 25.0f;
   private static final float[] LEFT_HAND_HOLLOW_CIRCLE_COLOR = new float[] {0.2f, 1f, 0.2f, 1f};
+  private static final float[] INDEX_HIGHLIGHT_COLOR = new float[] {0.8f, 0.2f, 0.6f, 1f};
   private static final float[] RIGHT_HAND_HOLLOW_CIRCLE_COLOR = new float[] {1f, 0.2f, 0.2f, 1f};
   private static final float HOLLOW_CIRCLE_RADIUS = 0.01f;
   private static final float[] LEFT_HAND_LANDMARK_COLOR = new float[] {1f, 0.2f, 0.2f, 1f};
@@ -75,6 +76,8 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
     colorHandle = GLES20.glGetUniformLocation(program, "uColor");
   }
 
+  boolean big = false;
+
   @Override
   public void renderResult(HandsResult result, float[] projectionMatrix) {
     if (result == null) {
@@ -91,6 +94,7 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
           result.multiHandLandmarks().get(i).getLandmarkList(),
           isLeftHand ? LEFT_HAND_CONNECTION_COLOR : RIGHT_HAND_CONNECTION_COLOR);
       for (NormalizedLandmark landmark : result.multiHandLandmarks().get(i).getLandmarkList()) {
+        big = landmark.equals(result.multiHandLandmarks().get(i).getLandmarkList().get(8));
         // Draws the landmark.
         drawCircle(
             landmark.getX(),
@@ -133,7 +137,7 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
   }
 
   private void drawCircle(float x, float y, float[] colorArray) {
-    GLES20.glUniform4fv(colorHandle, 1, colorArray, 0);
+    GLES20.glUniform4fv(colorHandle, 1, big ? INDEX_HIGHLIGHT_COLOR : colorArray, 0);
     int vertexCount = NUM_SEGMENTS + 2;
     float[] vertices = new float[vertexCount * 3];
     vertices[0] = x;
@@ -142,8 +146,9 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
     for (int i = 1; i < vertexCount; i++) {
       float angle = 2.0f * i * (float) Math.PI / NUM_SEGMENTS;
       int currentIndex = 3 * i;
-      vertices[currentIndex] = x + (float) (LANDMARK_RADIUS * Math.cos(angle));
-      vertices[currentIndex + 1] = y + (float) (LANDMARK_RADIUS * Math.sin(angle));
+      float radius = LANDMARK_RADIUS * (big ? 3 : 1);
+      vertices[currentIndex] = x + (float) (radius * Math.cos(angle));
+      vertices[currentIndex + 1] = y + (float) (radius * Math.sin(angle));
       vertices[currentIndex + 2] = 0;
     }
     FloatBuffer vertexBuffer =
@@ -158,6 +163,7 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
   }
 
   private void drawHollowCircle(float x, float y, float[] colorArray) {
+    if (big) return;
     GLES20.glUniform4fv(colorHandle, 1, colorArray, 0);
     int vertexCount = NUM_SEGMENTS + 1;
     float[] vertices = new float[vertexCount * 3];
