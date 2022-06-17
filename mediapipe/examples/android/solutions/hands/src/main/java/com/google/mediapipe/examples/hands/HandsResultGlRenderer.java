@@ -55,6 +55,7 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
   private int positionHandle;
   private int projectionMatrixHandle;
   private int colorHandle;
+  public static boolean indexFingerIsPointing;
 
   private int loadShader(int type, String shaderCode) {
     int shader = GLES20.glCreateShader(type);
@@ -137,7 +138,7 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
   }
 
   private void drawCircle(float x, float y, float[] colorArray) {
-    GLES20.glUniform4fv(colorHandle, 1, big ? INDEX_HIGHLIGHT_COLOR : colorArray, 0);
+    GLES20.glUniform4fv(colorHandle, 1, (big && indexFingerIsPointing) ? INDEX_HIGHLIGHT_COLOR : colorArray, 0);
     int vertexCount = NUM_SEGMENTS + 2;
     float[] vertices = new float[vertexCount * 3];
     vertices[0] = x;
@@ -146,7 +147,7 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
     for (int i = 1; i < vertexCount; i++) {
       float angle = 2.0f * i * (float) Math.PI / NUM_SEGMENTS;
       int currentIndex = 3 * i;
-      float radius = LANDMARK_RADIUS * (big ? 3 : 1);
+      float radius = LANDMARK_RADIUS * (big && indexFingerIsPointing ? 3 : 1);
       vertices[currentIndex] = x + (float) (radius * Math.cos(angle));
       vertices[currentIndex + 1] = y + (float) (radius * Math.sin(angle));
       vertices[currentIndex + 2] = 0;
@@ -163,7 +164,7 @@ public class HandsResultGlRenderer implements ResultGlRenderer<HandsResult> {
   }
 
   private void drawHollowCircle(float x, float y, float[] colorArray) {
-    if (big) return;
+    if (big && indexFingerIsPointing) return;
     GLES20.glUniform4fv(colorHandle, 1, colorArray, 0);
     int vertexCount = NUM_SEGMENTS + 1;
     float[] vertices = new float[vertexCount * 3];

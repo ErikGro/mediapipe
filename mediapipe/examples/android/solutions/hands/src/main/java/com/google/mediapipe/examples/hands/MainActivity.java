@@ -14,11 +14,18 @@
 
 package com.google.mediapipe.examples.hands;
 
+import static java.lang.Math.abs;
+import static java.lang.Math.min;
+
 import android.content.Intent;
+import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.Matrix;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
+
+import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
@@ -28,17 +35,40 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.exifinterface.media.ExifInterface;
 // ContentResolver dependency
+import com.google.mediapipe.formats.proto.LandmarkProto;
 import com.google.mediapipe.formats.proto.LandmarkProto.Landmark;
 import com.google.mediapipe.formats.proto.LandmarkProto.NormalizedLandmark;
 import com.google.mediapipe.solutioncore.CameraInput;
+import com.google.mediapipe.solutioncore.ImageSolutionResult;
 import com.google.mediapipe.solutioncore.SolutionGlSurfaceView;
 import com.google.mediapipe.solutioncore.VideoInput;
 import com.google.mediapipe.solutions.hands.HandLandmark;
 import com.google.mediapipe.solutions.hands.Hands;
 import com.google.mediapipe.solutions.hands.HandsOptions;
 import com.google.mediapipe.solutions.hands.HandsResult;
+
+import org.tensorflow.lite.Interpreter;
+import org.tensorflow.lite.Tensor;
+import org.tensorflow.lite.support.common.FileUtil;
+
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.MappedByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+
+class Coord {
+  float x,y;
+
+  Coord(float x, float y) {
+    this.x = x;
+    this.y = y;
+  }
+}
 
 /** Main activity of MediaPipe Hands app. */
 public class MainActivity extends AppCompatActivity {
@@ -67,6 +97,8 @@ public class MainActivity extends AppCompatActivity {
 
   private SolutionGlSurfaceView<HandsResult> glSurfaceView;
 
+  private Interpreter indexInterpreter;
+
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -74,6 +106,26 @@ public class MainActivity extends AppCompatActivity {
     setupStaticImageDemoUiComponents();
     setupVideoDemoUiComponents();
     setupLiveDemoUiComponents();
+    setupInterpreter();
+  }
+
+  private void setupInterpreter() {
+    MappedByteBuffer tfliteModel = null;
+
+    try {
+      tfliteModel = FileUtil.loadMappedFile(this, "keypoint_classifier.tflite");
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+    if (tfliteModel != null) {
+      Interpreter.Options options = new Interpreter.Options();
+      options.setNumThreads(1);
+      options.setUseXNNPACK(true);
+      options.setUseNNAPI(true);
+      indexInterpreter = new Interpreter(tfliteModel, options);
+      indexInterpreter.allocateTensors();
+    }
   }
 
   @Override
@@ -203,6 +255,9 @@ public class MainActivity extends AppCompatActivity {
         handsResult -> {
           logWristLandmark(handsResult, /*showPixelValues=*/ true);
           imageView.setHandsResult(handsResult);
+
+          //boolean isPointing = indexFingerIsPointing(handsResult);
+
           runOnUiThread(() -> imageView.update());
         });
     hands.setErrorListener((message, e) -> Log.e(TAG, "MediaPipe Hands error:" + message));
@@ -213,6 +268,59 @@ public class MainActivity extends AppCompatActivity {
     imageView.setImageDrawable(null);
     frameLayout.addView(imageView);
     imageView.setVisibility(View.VISIBLE);
+  }
+
+  private boolean indexFingerIsPointing(HandsResult handsResult, int width, int height) {
+    if (handsResult.multiHandLandmarks().size() != 1) { return false; }
+
+    List<NormalizedLandmark> landmarks = handsResult.multiHandLandmarks().get(0).getLandmarkList();
+    float[][] input = new float[1][42];
+    input[0] = preprocessInputList(landmarks, width, height);
+    float[][] output = new float[1][3];
+    output[0] = new float[3];
+
+    indexInterpreter.run(input, output);
+
+    int maxAt = 0;
+    for (int i = 0; i < output[0].length; i++) {
+      maxAt = output[0][i] > output[0][maxAt] ? i : maxAt;
+    }
+    Log.i("MAX AT", String.valueOf(maxAt));
+    return maxAt == 2;
+  }
+
+  private float[] preprocessInputList(List<NormalizedLandmark> list, int width, int height) {
+    float[] input = new float[42];
+
+    List<Coord> coords = new ArrayList<>();
+    for (NormalizedLandmark n: list) {
+      float x = min(n.getX() * width, width - 1);
+      float y = min(n.getY() * height, height - 1);
+      coords.add(new Coord(x, y));
+    }
+
+    float x = coords.get(0).x;
+    float y = coords.get(0).y;
+
+    for (int i = 0; i < coords.size(); i++) {
+      input[i*2] = coords.get(i).x - x;
+      input[i*2+1] = coords.get(i).y - y;
+    }
+
+    // Find max value
+    float max = 0f;
+    for (float f: input) {
+      if (abs(f) > max) {
+        max = abs(f);
+      }
+    }
+
+    // Normalise
+    for (int i = 0; i < input.length; i++) {
+      input[i] = input[i] / max;
+    }
+
+    return input;
   }
 
   /** Sets up the UI components for the video demo. */
@@ -291,6 +399,9 @@ public class MainActivity extends AppCompatActivity {
     hands.setResultListener(
         handsResult -> {
           logWristLandmark(handsResult, /*showPixelValues=*/ false);
+          boolean isPointing = indexFingerIsPointing(handsResult, glSurfaceView.getWidth(), glSurfaceView.getHeight());
+          Log.i("IS POINTING", isPointing ? "JO" : "NEI");
+          HandsResultGlRenderer.indexFingerIsPointing = isPointing;
           glSurfaceView.setRenderData(handsResult);
           glSurfaceView.requestRender();
         });
